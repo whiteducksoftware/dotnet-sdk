@@ -65,6 +65,11 @@ namespace ControllerSample.Controllers
                 return this.NotFound();
             }
 
+            if (int.Parse(state.ETag.Value!) % 2 == 0)
+            {
+                await Task.Delay(10 * 1000);
+            }
+
             state.Value.Balance -= transaction.Amount;
             await state.SaveAsync();
             return state.Value;

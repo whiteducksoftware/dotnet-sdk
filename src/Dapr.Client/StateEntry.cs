@@ -24,12 +24,13 @@ namespace Dapr
         /// <param name="client">The <see cref="StateClient" /> instance used to retrieve the value.</param>
         /// <param name="key">The state key.</param>
         /// <param name="value">The value.</param>
+        /// <param name="etag">The <see cref="ETag" /> assocated with the provided value.</param>
         /// <remarks>
         /// Application code should not need to create instances of <see cref="StateEntry{T}" />. Use
         /// <see cref="StateClient.GetStateEntryAsync{TValue}(string, CancellationToken)" /> to access
         /// state entries.
         /// </remarks>
-        public StateEntry(StateClient client, string key, [AllowNull] TValue value)
+        public StateEntry(StateClient client, string key, [AllowNull] TValue value, ETag etag)
         {
             if (client is null)
             {
@@ -43,6 +44,7 @@ namespace Dapr
 
             this.Key = key;
             this.Value = value;
+            this.ETag = etag;
             this.client = client;
         }
 
@@ -59,13 +61,18 @@ namespace Dapr
         public TValue Value { get; set; }
 
         /// <summary>
+        /// Gets the <see cref="ETag" /> value associated with value.
+        /// </summary>
+        public ETag ETag { get; }
+
+        /// <summary>
         /// Deletes the entry assocated with <see cref="Key" /> in the state store.
         /// </summary>
         /// <param name="cancellationToken">A <see cref="CancellationToken" /> that can be used to cancel the operation.</param>
         /// <returns>A <see cref="ValueTask" /> that will complete when the operation has completed.</returns>
         public ValueTask DeleteAsync(CancellationToken cancellationToken = default)
         {
-            return this.client.DeleteStateAsync(this.Key, cancellationToken);
+            return this.client.DeleteStateAsync(this.Key, this.ETag, cancellationToken);
         }
 
         /// <summary>
@@ -75,7 +82,7 @@ namespace Dapr
         /// <returns>A <see cref="ValueTask" /> that will complete when the operation has completed.</returns>
         public ValueTask SaveAsync(CancellationToken cancellationToken = default)
         {
-            return this.client.SaveStateAsync(this.Key, this.Value, cancellationToken);
+            return this.client.SaveStateAsync(this.Key, this.Value, this.ETag, cancellationToken);
         }
     }
 }

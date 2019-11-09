@@ -9,6 +9,7 @@ namespace Dapr
     using System.Diagnostics;
     using System.Diagnostics.CodeAnalysis;
     using System.IO;
+    using System.Linq;
     using System.Net;
     using System.Net.Http;
     using System.Net.Http.Headers;
@@ -50,7 +51,7 @@ namespace Dapr
         /// <param name="cancellationToken">A <see cref="CancellationToken" /> that can be used to cancel the operation.</param>
         /// <typeparam name="TValue">The data type.</typeparam>
         /// <returns>A <see cref="ValueTask" /> that will return the value when the operation has completed.</returns>
-        public async override ValueTask<TValue> GetStateAsync<TValue>(string key, CancellationToken cancellationToken = default)
+        public async override ValueTask<(TValue value, ETag etag)> GetStateAndETagAsync<TValue>(string key, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrEmpty(key))
             {
@@ -65,7 +66,11 @@ namespace Dapr
             // 200: found state
             if (response.StatusCode == HttpStatusCode.OK && response.Content != null)
             {
-                return await this.ReadJsonResponseBodyAsync<TValue>(response, "get state", cancellationToken);
+                var value = await this.ReadJsonResponseBodyAsync<TValue>(response, "get state", cancellationToken);
+
+                // Don't use the built-in HttpClient parser for ETag, it expects values to be double-quoted.
+                var etag = new ETag(response.Headers.GetValues("ETag").FirstOrDefault());
+                return (value, etag);
             }
 
             // 204: no entry for this key
@@ -83,10 +88,11 @@ namespace Dapr
         /// </summary>
         /// <param name="key">The state key.</param>
         /// <param name="value">The value to save.</param>
+        /// <param name="etag">An <see cref="ETag" /> value.</param>
         /// <param name="cancellationToken">A <see cref="CancellationToken" /> that can be used to cancel the operation.</param>
         /// <typeparam name="TValue">The data type.</typeparam>
         /// <returns>A <see cref="ValueTask" /> that will complete when the operation has completed.</returns>
-        public async override ValueTask SaveStateAsync<TValue>(string key, [MaybeNull] TValue value, CancellationToken cancellationToken = default)
+        public async override ValueTask SaveStateAsync<TValue>(string key, [MaybeNull] TValue value, ETag etag, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrEmpty(key))
             {
@@ -96,7 +102,7 @@ namespace Dapr
             // Docs: https://github.com/dapr/docs/blob/master/reference/api/state.md#save-state
             var url = this.client.BaseAddress == null ? $"http://localhost:{DefaultHttpPort}{StatePath}" : StatePath;
             var request = new HttpRequestMessage(HttpMethod.Post, url);
-            var obj = new object[] { new { key = key, value = value, } };
+            var obj = new object[] { new { key = key, value = value, etag = etag.Value, } };
             request.Content = this.CreateContent(obj);
 
             var response = await this.client.SendAsync(request, cancellationToken).ConfigureAwait(false);
@@ -116,9 +122,10 @@ namespace Dapr
         /// Deletes the value associated with the provided <paramref name="key" /> in the Dapr state store.
         /// </summary>
         /// <param name="key">The state key.</param>
+        /// <param name="etag">An <see cref="ETag" /> value.</param>
         /// <param name="cancellationToken">A <see cref="CancellationToken" /> that can be used to cancel the operation.</param>
         /// <returns>A <see cref="ValueTask" /> that will complete when the operation has completed.</returns>
-        public async override ValueTask DeleteStateAsync(string key, CancellationToken cancellationToken = default)
+        public async override ValueTask DeleteStateAsync(string key, ETag etag, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrEmpty(key))
             {
@@ -128,6 +135,11 @@ namespace Dapr
             // Docs: https://github.com/dapr/docs/blob/master/reference/api/state.md#delete-state
             var url = this.client.BaseAddress == null ? $"http://localhost:{DefaultHttpPort}{StatePath}/{key}" : $"{StatePath}/{key}";
             var request = new HttpRequestMessage(HttpMethod.Delete, url);
+
+            if (etag.HasValue)
+            {
+                request.Headers.IfMatch.Add(new EntityTagHeaderValue(etag.Value));
+            }
 
             var response = await this.client.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
