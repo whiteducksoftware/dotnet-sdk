@@ -13,7 +13,7 @@ namespace RoutingSample
         /// <summary>
         /// Gets or sets account id for the transaction.
         /// </summary>
-        public string Id { get; set; }
+        public string Id { get; set; } = default!;
 
         /// <summary>
         /// Gets or sets amount for the transaction.

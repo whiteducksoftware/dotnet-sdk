@@ -6,6 +6,7 @@
 namespace Dapr
 {
     using System;
+    using System.Diagnostics.CodeAnalysis;
     using System.Threading;
     using System.Threading.Tasks;
 
@@ -28,7 +29,7 @@ namespace Dapr
         /// <see cref="StateClient.GetStateEntryAsync{TValue}(string, CancellationToken)" /> to access
         /// state entries.
         /// </remarks>
-        public StateEntry(StateClient client, string key, TValue value)
+        public StateEntry(StateClient client, string key, [AllowNull] TValue value)
         {
             if (client is null)
             {
@@ -53,6 +54,8 @@ namespace Dapr
         /// <summary>
         /// Gets or sets the value.
         /// </summary>
+        [AllowNull]
+        [MaybeNull]
         public TValue Value { get; set; }
 
         /// <summary>

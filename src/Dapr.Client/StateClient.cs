@@ -6,6 +6,7 @@
 namespace Dapr
 {
     using System;
+    using System.Diagnostics.CodeAnalysis;
     using System.Threading;
     using System.Threading.Tasks;
 
@@ -51,6 +52,6 @@ namespace Dapr
         /// <param name="cancellationToken">A <see cref="CancellationToken" /> that can be used to cancel the operation.</param>
         /// <typeparam name="TValue">The data type.</typeparam>
         /// <returns>A <see cref="ValueTask" /> that will complete when the operation has completed.</returns>
-        public abstract ValueTask SaveStateAsync<TValue>(string key, TValue value, CancellationToken cancellationToken = default);
+        public abstract ValueTask SaveStateAsync<TValue>(string key, [AllowNull] TValue value, CancellationToken cancellationToken = default);
     }
 }

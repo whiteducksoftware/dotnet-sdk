@@ -6,6 +6,7 @@
 namespace Dapr
 {
     using System;
+    using System.Diagnostics.CodeAnalysis;
     using System.IO;
     using System.Net;
     using System.Net.Http;
@@ -22,14 +23,14 @@ namespace Dapr
     public sealed class StateHttpClient : StateClient
     {
         private readonly HttpClient client;
-        private readonly JsonSerializerOptions serializerOptions;
+        private readonly JsonSerializerOptions? serializerOptions;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="StateHttpClient"/> class.
         /// </summary>
         /// <param name="client">The <see cref="HttpClient" />.</param>
         /// <param name="serializerOptions">The <see cref="JsonSerializerOptions" />.</param>
-        public StateHttpClient(HttpClient client, JsonSerializerOptions serializerOptions = null)
+        public StateHttpClient(HttpClient client, JsonSerializerOptions? serializerOptions = null)
         {
             if (client is null)
             {
@@ -60,7 +61,7 @@ namespace Dapr
 
             if (response.StatusCode == HttpStatusCode.NotFound)
             {
-                return default;
+                return default!;
             }
 
             if (!response.IsSuccessStatusCode && response.Content != null)
@@ -76,7 +77,7 @@ namespace Dapr
             if (response.Content == null || response.Content.Headers?.ContentLength == 0)
             {
                 // The state store will return empty application/json instead of 204/404.
-                return default;
+                return default!;
             }
 
             using (var stream = await response.Content.ReadAsStreamAsync())
@@ -94,7 +95,7 @@ namespace Dapr
         /// <param name="cancellationToken">A <see cref="CancellationToken" /> that can be used to cancel the operation.</param>
         /// <typeparam name="TValue">The data type.</typeparam>
         /// <returns>A <see cref="ValueTask" /> that will complete when the operation has completed.</returns>
-        public async override ValueTask SaveStateAsync<TValue>(string key, TValue value, CancellationToken cancellationToken = default)
+        public async override ValueTask SaveStateAsync<TValue>(string key, [MaybeNull] TValue value, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrEmpty(key))
             {
@@ -122,7 +123,7 @@ namespace Dapr
             }
         }
 
-        private static AsyncJsonContent<T> CreateContent<T>(T obj, JsonSerializerOptions serializerOptions)
+        private static AsyncJsonContent<T> CreateContent<T>(T obj, JsonSerializerOptions? serializerOptions)
         {
             return new AsyncJsonContent<T>(obj, serializerOptions);
         }
@@ -135,9 +136,9 @@ namespace Dapr
         private class AsyncJsonContent<T> : HttpContent
         {
             private readonly T obj;
-            private readonly JsonSerializerOptions serializerOptions;
+            private readonly JsonSerializerOptions? serializerOptions;
 
-            public AsyncJsonContent(T obj, JsonSerializerOptions serializerOptions)
+            public AsyncJsonContent(T obj, JsonSerializerOptions? serializerOptions)
             {
                 this.obj = obj;
                 this.serializerOptions = serializerOptions;

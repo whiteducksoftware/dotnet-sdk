@@ -13,7 +13,7 @@ namespace ControllerSample
         /// <summary>
         /// Gets or sets account id.
         /// </summary>
-        public string Id { get; set; }
+        public string Id { get; set; } = default!;
 
         /// <summary>
         /// Gets or sets account balance.

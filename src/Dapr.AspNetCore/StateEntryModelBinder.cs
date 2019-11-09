@@ -78,11 +78,13 @@ namespace Dapr
         }
 
         private static async Task<object> GetStateEntryAsync<T>(StateClient stateClient, string key)
+            where T : class
         {
             return await stateClient.GetStateEntryAsync<T>(key);
         }
 
         private static async Task<object> GetStateAsync<T>(StateClient stateClient, string key)
+            where T : class
         {
             return await stateClient.GetStateAsync<T>(key);
         }

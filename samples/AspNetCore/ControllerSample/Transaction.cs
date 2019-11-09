@@ -16,7 +16,7 @@ namespace ControllerSample
         /// Gets or sets account id for the transaction.
         /// </summary>
         [Required]
-        public string Id { get; set; }
+        public string Id { get; set; } = default!;
 
         /// <summary>
         /// Gets or sets amount for the transaction.
