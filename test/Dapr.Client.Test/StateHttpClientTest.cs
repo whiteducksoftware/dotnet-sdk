@@ -8,6 +8,7 @@ namespace Dapr.Client.Test
     using System.Net;
     using System.Net.Http;
     using System.Net.Http.Headers;
+    using System.Text;
     using System.Text.Json;
     using System.Threading.Tasks;
     using FluentAssertions;
@@ -27,6 +28,31 @@ namespace Dapr.Client.Test
             entry.Request.RequestUri.ToString().Should().Be(GetStateUrl(3500, "test"));
 
             entry.RespondWithJson(new Widget() { Size = "small", Color = "yellow", });
+
+            var state = await task;
+            state.Size.Should().Be("small");
+            state.Color.Should().Be("yellow");
+        }
+
+        // We don't expect this to happen in practice, it's just here for robustness
+        [Fact]
+        public async Task GetStateAsync_CanReadState_UTF16()
+        {
+            var httpClient = new TestHttpClient();
+            var client = new StateHttpClient(httpClient, new JsonSerializerOptions());
+
+            var task = client.GetStateAsync<Widget>("test");
+
+            httpClient.Requests.TryDequeue(out var entry).Should().BeTrue();
+            entry.Request.RequestUri.ToString().Should().Be(GetStateUrl(3500, "test"));
+
+            var text = JsonSerializer.Serialize(new Widget() { Size = "small", Color = "yellow", });
+
+            var response = new HttpResponseMessage(HttpStatusCode.OK);
+            response.Content = new ByteArrayContent(Encoding.Unicode.GetBytes(text));
+            response.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json") { CharSet = Encoding.Unicode.WebName, };
+
+            entry.Respond(response);
 
             var state = await task;
             state.Size.Should().Be("small");

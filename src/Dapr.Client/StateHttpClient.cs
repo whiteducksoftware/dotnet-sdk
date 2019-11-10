@@ -6,11 +6,13 @@
 namespace Dapr
 {
     using System;
+    using System.Diagnostics;
     using System.Diagnostics.CodeAnalysis;
     using System.IO;
     using System.Net;
     using System.Net.Http;
     using System.Net.Http.Headers;
+    using System.Text;
     using System.Text.Json;
     using System.Threading;
     using System.Threading.Tasks;
@@ -63,11 +65,7 @@ namespace Dapr
             // 200: found state
             if (response.StatusCode == HttpStatusCode.OK && response.Content != null)
             {
-                using var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
-                return await JsonSerializer.DeserializeAsync<TValue>(
-                    stream,
-                    this.serializerOptions,
-                    cancellationToken).ConfigureAwait(false);
+                return await this.ReadJsonResponseBodyAsync<TValue>(response, "get state", cancellationToken);
             }
 
             // 204: no entry for this key
@@ -114,6 +112,35 @@ namespace Dapr
             throw await this.ReportErrorAsync(response, "save state", cancellationToken);
         }
 
+        // Our JSON serializer natively handles UTF-8 with a fast path, but can't deserialize from streams
+        // with any other encoding. We always expect the state store to use UTF-8 because it's $currentYear,
+        // however we don't want to produce garbage if something else happens.
+        private async ValueTask<T> ReadJsonResponseBodyAsync<T>(HttpResponseMessage response, string operation, CancellationToken cancellationToken)
+        {
+            Debug.Assert(response.Content != null, "Check for content before calling this method.");
+
+            var contentType = response.Content.Headers.ContentType;
+            if (contentType?.MediaType != "application/json")
+            {
+                throw new HttpRequestException($"Failed to {operation}. State store responded with 'Content-Type: {contentType?.MediaType}'.");
+            }
+
+            var charSet = contentType.CharSet ?? Encoding.UTF8.WebName; // Assume UTF-8 if not specified.
+            if (charSet == Encoding.UTF8.WebName)
+            {
+                using var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+                return await JsonSerializer.DeserializeAsync<T>(
+                    stream,
+                    this.serializerOptions,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                var text = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                return JsonSerializer.Deserialize<T>(text, this.serializerOptions);
+            }
+        }
+
         private async ValueTask<Exception> ReportErrorAsync(HttpResponseMessage response, string operation, CancellationToken cancellationToken)
         {
             // The state store will return 400 or 500 depending on whether its a configuration error
@@ -123,13 +150,10 @@ namespace Dapr
             {
                 return new HttpRequestException($"Failed to {operation} with status code '{response.StatusCode}'.");
             }
-            else if (response.Content.Headers.ContentType.MediaType == "application/json")
+            else if (response.Content.Headers.ContentType?.MediaType == "application/json")
             {
                 using var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
-                var error = await JsonSerializer.DeserializeAsync<ErrorResponse>(
-                    stream,
-                    this.serializerOptions,
-                    cancellationToken).ConfigureAwait(false);
+                var error = await this.ReadJsonResponseBodyAsync<ErrorResponse>(response, operation, cancellationToken);
                 return new HttpRequestException(
                     $"Failed to {operation} with status code '{response.StatusCode}': {error.ErrorCode}." +
                     Environment.NewLine +
