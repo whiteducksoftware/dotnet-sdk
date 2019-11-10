@@ -7,6 +7,7 @@ namespace Dapr.Client.Test
 {
     using System.Net;
     using System.Net.Http;
+    using System.Net.Http.Headers;
     using System.Text.Json;
     using System.Threading.Tasks;
     using FluentAssertions;
@@ -43,7 +44,7 @@ namespace Dapr.Client.Test
             httpClient.Requests.TryDequeue(out var entry).Should().BeTrue();
             entry.Request.RequestUri.ToString().Should().Be(GetStateUrl(3500, "test"));
 
-            entry.Respond(new HttpResponseMessage(HttpStatusCode.OK));
+            entry.Respond(new HttpResponseMessage(HttpStatusCode.NoContent));
 
             var state = await task;
             state.Should().BeNull();
@@ -59,6 +60,30 @@ namespace Dapr.Client.Test
 
             httpClient.Requests.TryDequeue(out var entry).Should().BeTrue();
             entry.Request.RequestUri.ToString().Should().Be(GetStateUrl(3500, "test"));
+
+            entry.Respond(new HttpResponseMessage(HttpStatusCode.NotAcceptable));
+
+            await FluentActions.Awaiting(async () => await task).Should().ThrowAsync<HttpRequestException>();
+        }
+
+        [Fact]
+        public async Task GetStateAsync_ThrowsForNonSuccess_WithErrorPayload()
+        {
+            var httpClient = new TestHttpClient();
+            var client = new StateHttpClient(httpClient, new JsonSerializerOptions());
+
+            var task = client.GetStateAsync<Widget>("test");
+
+            httpClient.Requests.TryDequeue(out var entry).Should().BeTrue();
+            entry.Request.RequestUri.ToString().Should().Be(GetStateUrl(3500, "test"));
+
+            var response = new HttpResponseMessage(HttpStatusCode.NotAcceptable);
+            response.Content = new StringContent(JsonSerializer.Serialize(new
+            {
+                errorCode = "Error yo.",
+                message = "An error happened, it was probably YOUR FAULT.",
+            }));
+            response.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
 
             entry.Respond(new HttpResponseMessage(HttpStatusCode.NotAcceptable));
 
@@ -89,7 +114,7 @@ namespace Dapr.Client.Test
                 value.Color.Should().Be("yellow");
             }
 
-            entry.Respond(new HttpResponseMessage(HttpStatusCode.NoContent));
+            entry.Respond(new HttpResponseMessage(HttpStatusCode.Created));
             await task;
         }
 
@@ -114,12 +139,12 @@ namespace Dapr.Client.Test
                 json[0].GetProperty("value").ValueKind.Should().Be(JsonValueKind.Null);
             }
 
-            entry.Respond(new HttpResponseMessage(HttpStatusCode.NoContent));
+            entry.Respond(new HttpResponseMessage(HttpStatusCode.Created));
             await task;
         }
 
         [Fact]
-        public async Task SetStateAsync_ThrowsForNonSuccess()
+        public async Task SaveStateAsync_ThrowsForNonSuccess()
         {
             var httpClient = new TestHttpClient();
             var client = new StateHttpClient(httpClient, new JsonSerializerOptions());
@@ -165,7 +190,7 @@ namespace Dapr.Client.Test
             httpClient.Requests.TryDequeue(out var entry).Should().BeTrue();
             entry.Request.RequestUri.ToString().Should().Be(GetStateUrl(3500, "test"));
 
-            entry.Respond(new HttpResponseMessage(HttpStatusCode.OK));
+            entry.Respond(new HttpResponseMessage(HttpStatusCode.NoContent));
 
             var state = await task;
             state.Key.Should().Be("test");
@@ -208,7 +233,7 @@ namespace Dapr.Client.Test
                 value.Color.Should().Be("green");
             }
 
-            entry.Respond(new HttpResponseMessage(HttpStatusCode.NoContent));
+            entry.Respond(new HttpResponseMessage(HttpStatusCode.Created));
             await task;
         }
 

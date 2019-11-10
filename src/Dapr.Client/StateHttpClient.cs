@@ -55,35 +55,28 @@ namespace Dapr
                 throw new ArgumentException("The value cannot be null or empty.", nameof(key));
             }
 
+            // Docs: https://github.com/dapr/docs/blob/master/reference/api/state.md#get-state
             var url = this.client.BaseAddress == null ? $"http://localhost:{DefaultHttpPort}{StatePath}/{key}" : $"{StatePath}{key}";
             var request = new HttpRequestMessage(HttpMethod.Get, url);
             var response = await this.client.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
-            if (response.StatusCode == HttpStatusCode.NotFound)
+            // 200: found state
+            if (response.StatusCode == HttpStatusCode.OK && response.Content != null)
+            {
+                using var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+                return await JsonSerializer.DeserializeAsync<TValue>(
+                    stream,
+                    this.serializerOptions,
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            // 204: no entry for this key
+            if (response.StatusCode == HttpStatusCode.NoContent)
             {
                 return default!;
             }
 
-            if (!response.IsSuccessStatusCode && response.Content != null)
-            {
-                var error = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                throw new HttpRequestException($"Failed to get state with status code '{response.StatusCode}': {error}.");
-            }
-            else if (!response.IsSuccessStatusCode)
-            {
-                throw new HttpRequestException($"Failed to get state with status code '{response.StatusCode}'.");
-            }
-
-            if (response.Content == null || response.Content.Headers?.ContentLength == 0)
-            {
-                // The state store will return empty application/json instead of 204/404.
-                return default!;
-            }
-
-            using (var stream = await response.Content.ReadAsStreamAsync())
-            {
-                return await JsonSerializer.DeserializeAsync<TValue>(stream, this.serializerOptions, cancellationToken).ConfigureAwait(false);
-            }
+            throw await this.ReportErrorAsync(response, "get state", cancellationToken);
         }
 
         /// <summary>
@@ -102,30 +95,56 @@ namespace Dapr
                 throw new ArgumentException("The value cannot be null or empty.", nameof(key));
             }
 
+            // Docs: https://github.com/dapr/docs/blob/master/reference/api/state.md#save-state
             var url = this.client.BaseAddress == null ? $"http://localhost:{DefaultHttpPort}{StatePath}" : StatePath;
             var request = new HttpRequestMessage(HttpMethod.Post, url);
             var obj = new object[] { new { key = key, value = value, } };
-            request.Content = CreateContent(obj, this.serializerOptions);
+            request.Content = this.CreateContent(obj);
 
             var response = await this.client.SendAsync(request, cancellationToken).ConfigureAwait(false);
-            if (!response.IsSuccessStatusCode && response.Content != null)
-            {
-                var error = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                throw new HttpRequestException($"Failed to get state with status code '{response.StatusCode}': {error}.");
-            }
-            else if (!response.IsSuccessStatusCode)
-            {
-                throw new HttpRequestException($"Failed to get state with status code '{response.StatusCode}'.");
-            }
-            else
+
+            // 201: success
+            //
+            // To avoid being overload coupled we handle a range of 2XX status codes in common use for POSTs.
+            if ((int)response.StatusCode >= 200 && (int)response.StatusCode <= 204)
             {
                 return;
             }
+
+            throw await this.ReportErrorAsync(response, "save state", cancellationToken);
         }
 
-        private static AsyncJsonContent<T> CreateContent<T>(T obj, JsonSerializerOptions? serializerOptions)
+        private async ValueTask<Exception> ReportErrorAsync(HttpResponseMessage response, string operation, CancellationToken cancellationToken)
         {
-            return new AsyncJsonContent<T>(obj, serializerOptions);
+            // The state store will return 400 or 500 depending on whether its a configuration error
+            // or unknown failure, we just want to surface all of them the same way. It's not really
+            // something that application code would handle.
+            if (response.Content == null)
+            {
+                return new HttpRequestException($"Failed to {operation} with status code '{response.StatusCode}'.");
+            }
+            else if (response.Content.Headers.ContentType.MediaType == "application/json")
+            {
+                using var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+                var error = await JsonSerializer.DeserializeAsync<ErrorResponse>(
+                    stream,
+                    this.serializerOptions,
+                    cancellationToken).ConfigureAwait(false);
+                return new HttpRequestException(
+                    $"Failed to {operation} with status code '{response.StatusCode}': {error.ErrorCode}." +
+                    Environment.NewLine +
+                    error.Message);
+            }
+            else
+            {
+                var error = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                return new HttpRequestException($"Failed to {operation} with status code '{response.StatusCode}': {error}.");
+            }
+        }
+
+        private AsyncJsonContent<T> CreateContent<T>(T obj)
+        {
+            return new AsyncJsonContent<T>(obj, this.serializerOptions);
         }
 
         // Note: using push-streaming content here has a little higher cost for trivially-size payloads,
