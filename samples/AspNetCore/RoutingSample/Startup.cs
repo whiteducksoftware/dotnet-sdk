@@ -96,10 +96,10 @@ namespace RoutingSample
                 var client = context.RequestServices.GetRequiredService<StateClient>();
 
                 var transaction = await JsonSerializer.DeserializeAsync<Transaction>(context.Request.Body, serializerOptions);
-                var account = await client.GetStateAsync<Account>(transaction.Id);
-                if (account == null)
+                var account = await client.GetStateEntryAsync<Account>(transaction.Id);
+                if (account.Value == null)
                 {
-                    account = new Account() { Id = transaction.Id, };
+                    account.Value = new Account() { Id = transaction.Id, };
                 }
 
                 if (transaction.Amount < 0m)
@@ -108,11 +108,11 @@ namespace RoutingSample
                     return;
                 }
 
-                account.Balance += transaction.Amount;
-                await client.SaveStateAsync(transaction.Id, account);
+                account.Value.Balance += transaction.Amount;
+                await account.SaveAsync();
 
                 context.Response.ContentType = "application/json";
-                await JsonSerializer.SerializeAsync(context.Response.Body, account, serializerOptions);
+                await JsonSerializer.SerializeAsync(context.Response.Body, account.Value, serializerOptions);
             }
 
             async Task Withdraw(HttpContext context)
@@ -120,8 +120,8 @@ namespace RoutingSample
                 var client = context.RequestServices.GetRequiredService<StateClient>();
 
                 var transaction = await JsonSerializer.DeserializeAsync<Transaction>(context.Request.Body, serializerOptions);
-                var account = await client.GetStateAsync<Account>(transaction.Id);
-                if (account == null)
+                var account = await client.GetStateEntryAsync<Account>(transaction.Id);
+                if (account.Value == null)
                 {
                     context.Response.StatusCode = 404;
                     return;
@@ -133,11 +133,16 @@ namespace RoutingSample
                     return;
                 }
 
-                account.Balance -= transaction.Amount;
-                await client.SaveStateAsync(transaction.Id, account);
+                if (transaction.Amount > 5m)
+                {
+                    await Task.Delay(10 * 1000);
+                }
+
+                account.Value.Balance -= transaction.Amount;
+                await account.SaveAsync();
 
                 context.Response.ContentType = "application/json";
-                await JsonSerializer.SerializeAsync(context.Response.Body, account, serializerOptions);
+                await JsonSerializer.SerializeAsync(context.Response.Body, account.Value, serializerOptions);
             }
         }
     }

@@ -64,7 +64,9 @@ namespace Dapr
             var response = await this.client.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
             // 200: found state
-            if (response.StatusCode == HttpStatusCode.OK && response.Content != null)
+            if (response.StatusCode == HttpStatusCode.OK &&
+                response.Content != null &&
+                (response.Content.Headers.ContentLength == null || response.Content.Headers.ContentLength > 0))
             {
                 var value = await this.ReadJsonResponseBodyAsync<TValue>(response, "get state", cancellationToken);
 
@@ -74,7 +76,9 @@ namespace Dapr
             }
 
             // 204: no entry for this key
-            if (response.StatusCode == HttpStatusCode.NoContent)
+            if (response.StatusCode == HttpStatusCode.NoContent ||
+                response.Content == null ||
+                response.Content.Headers.ContentLength == 0)
             {
                 return default!;
             }
@@ -188,7 +192,7 @@ namespace Dapr
             // The state store will return 400 or 500 depending on whether its a configuration error
             // or unknown failure, we just want to surface all of them the same way. It's not really
             // something that application code would handle.
-            if (response.Content == null)
+            if (response.Content == null || response.Content.Headers.ContentLength == 0)
             {
                 return new HttpRequestException($"Failed to {operation} with status code '{response.StatusCode}'.");
             }
